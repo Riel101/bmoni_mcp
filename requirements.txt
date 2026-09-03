@@ -1,0 +1,4 @@
+# Core dependencies for the BMONI MCP server (Python 3.10+)
+fastmcp>=4.0
+httpx>=0.27
+python-dotenv>=1.0
