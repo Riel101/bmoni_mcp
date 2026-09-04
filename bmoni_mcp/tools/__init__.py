@@ -1,6 +1,7 @@
 """Tool groups for the BMONI MCP server."""
 
 from . import (
+    approvals_tools,
     bank_accounts,
     cards,
     employer,
@@ -26,6 +27,7 @@ TOOL_GROUPS: list[tuple[str, list]] = [
     ("cards", cards.TOOLS),
     ("employer", employer.TOOLS),
     ("webhooks", webhooks.TOOLS),
+    ("approvals", approvals_tools.TOOLS),
 ]
 
 

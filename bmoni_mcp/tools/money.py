@@ -4,10 +4,11 @@ withdrawals, offramps, SEPA payouts, bank payouts and LATAM pay-outs.
 
 from __future__ import annotations
 
-import base64
 from typing import Literal, Optional
 
+from ..config import get_settings
 from ..models import BankPayoutDetails, EuCounterpart
+from ..uploads import validate_upload
 from .common import get_client, payload
 
 SendCurrency = Literal[
@@ -620,11 +621,14 @@ async def bmoni_money_upload_eu_file(
         A fileId to reference in KYC or SEPA order requests.
     """
     client = get_client()
-    try:
-        content = base64.b64decode(file_base64)
-    except Exception as exc:
-        raise ValueError("file_base64 must be valid base64") from exc
-    files = [("file", (filename, content, "application/pdf"))]
+    settings = get_settings()
+    content, content_type = validate_upload(
+        file_base64,
+        filename=filename,
+        max_mb=settings.upload_max_mb,
+        allowed_types={"pdf", "jpeg"},
+    )
+    files = [("file", (filename, content, content_type))]
     return await client.post(f"/v1/users/{user_id}/eu/files", files=files)
 
 

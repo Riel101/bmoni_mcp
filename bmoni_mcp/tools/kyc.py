@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import base64
 from typing import Literal, Optional
 
+from ..config import get_settings
 from ..models import KycUpdateInput
+from ..uploads import validate_upload
 from .common import get_client, payload
 
 # Documented SumSub level names.
@@ -14,21 +15,21 @@ SumSubLevel = Literal[
 ]
 
 
-def _decode_base64(value: str, default_filename: str) -> tuple[bytes, str]:
-    """Decode a base64 file payload into (bytes, filename)."""
-    try:
-        return base64.b64decode(value), default_filename
-    except Exception as exc:
-        raise ValueError(
-            f"file content for '{default_filename}' must be valid base64"
-        ) from exc
-
-
-def _multipart_file(name: str, content_base64: str, filename: str) -> tuple[str, tuple[str, bytes, str]]:
-    bytes_, name_ = _decode_base64(content_base64, filename)
-    ext = name_.rsplit(".", 1)[-1].lower() if "." in name_ else "jpg"
-    content_type = {"png": "image/png", "pdf": "application/pdf"}.get(ext, "image/jpeg")
-    return name, (name_, bytes_, content_type)
+def _multipart_file(
+    name: str,
+    content_base64: str,
+    filename: str,
+    allowed: Optional[set[str]] = None,
+) -> tuple[str, tuple[str, bytes, str]]:
+    """Validate (size + magic bytes) and prepare a multipart file part."""
+    settings = get_settings()
+    content, content_type = validate_upload(
+        content_base64,
+        filename=filename,
+        max_mb=settings.upload_max_mb,
+        allowed_types=allowed,
+    )
+    return name, (filename, content, content_type)
 
 
 async def bmoni_kyc_options(user_id: str) -> dict:
@@ -296,7 +297,9 @@ async def bmoni_kyc_upload_biometric(
         Upload / verification result.
     """
     client = get_client()
-    files = [_multipart_file("files", file_base64, filename)]
+    files = [
+        _multipart_file("files", file_base64, filename, allowed={"jpeg", "png"})
+    ]
     return await client.post(
         f"/v1/users/{user_id}/kyc/documents/biometric",
         data=payload(type=type),

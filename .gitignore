@@ -6,4 +6,14 @@
 .langgraph_api/
 venv
 opencode.json
+prompt.md
 resource.md
+
+# Secrets: never commit real credentials. Keep the *.env.example template.
+.env
+.env.*
+!.env.example
+
+# Local approval database / runtime artifacts
+.bmoni_approvals.sqlite3
+.bmoni_mcp/

@@ -6,6 +6,7 @@ from typing import Any
 
 from ..api import BmoniClient
 from ..config import get_settings
+from ..env_guard import resolve_credentials
 
 _client: BmoniClient | None = None
 
@@ -13,9 +14,12 @@ _client: BmoniClient | None = None
 def get_client(transport: Any | None = None) -> BmoniClient:
     """Return a lazily-created, env-configured BMONI client.
 
-    Fails with an actionable message when BMONI_BASE_URL/BMONI_API_KEY
-    have not been provided. Configuration is read lazily so the server
-    can be imported and inspected without credentials being present.
+    The active endpoint + API key pair is resolved purely from ``BMONI_ENV``
+    (sandbox -> developer API link/key, production -> production pair) and is
+    fail-closed: a missing/inconsistent environment raises an actionable
+    error and no live request is ever attempted against the wrong host.
+    Configuration is read lazily so the server can be imported and inspected
+    without credentials being present.
     """
     global _client
     if _client is None or transport is not None:
@@ -23,11 +27,17 @@ def get_client(transport: Any | None = None) -> BmoniClient:
         missing = settings.missing()
         if missing:
             raise RuntimeError(settings.configuration_error())
+        try:
+            base_url, api_key = resolve_credentials(settings)
+        except RuntimeError as exc:
+            raise RuntimeError(settings.configuration_error()) from exc
         client = BmoniClient(
-            settings.base_url,
-            settings.api_key,
+            base_url,
+            api_key,
             timeout=settings.timeout,
             transport=transport,
+            read_only=settings.read_only,
+            error_body_echo=settings.error_body_echo,
         )
         if transport is None:
             _client = client

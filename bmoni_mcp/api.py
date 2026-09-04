@@ -10,9 +10,19 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from typing import Any
 
 import httpx
+
+from .redact import redact
+
+# Pure-read POST endpoints permitted in read-only mode (everything else that
+# is not a GET is a mutation and is refused).
+_READONLY_ALLOWED_POST = (
+    "/cards/sensitive-data",
+    "/payouts/validate-account",
+)
 
 
 class BmoniError(Exception):
@@ -44,7 +54,12 @@ class BmoniError(Exception):
 
 
 class BmoniClient:
-    """Stateless wrapper around the BMONI REST API."""
+    """Stateless wrapper around the BMONI REST API.
+
+    ``read_only`` / ``error_body_echo`` may be passed explicitly; when left as
+    None the process environment is consulted on every request so a tool can
+    never construct a client that bypasses read-only mode or error redaction.
+    """
 
     def __init__(
         self,
@@ -52,11 +67,15 @@ class BmoniClient:
         api_key: str,
         timeout: float = 30.0,
         transport: httpx.AsyncBaseTransport | None = None,
+        read_only: bool | None = None,
+        error_body_echo: str | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._timeout = timeout
         self._transport = transport
+        self._read_only = read_only
+        self._error_body_echo = error_body_echo
 
     # -- low level ---------------------------------------------------------
     async def request(
@@ -69,6 +88,16 @@ class BmoniClient:
         data: dict[str, Any] | None = None,
         files: dict[str, Any] | None = None,
     ) -> Any:
+        if self._read_only_effective() and not self._allowed_readonly(method, path):
+            raise BmoniError(
+                "Refused: the BMONI MCP server is in read-only mode "
+                "(BMONI_READ_ONLY=1) and this request would mutate state",
+                method=method,
+                path=path,
+                status_code=403,
+                body=None,
+            )
+
         headers = {
             "x-api-key": self._api_key,
             "Accept": "application/json",
@@ -96,14 +125,62 @@ class BmoniClient:
                 body: Any = response.json()
             except Exception:
                 body = response.text
+            body = self._scrub_body(body)
             raise BmoniError(
                 "BMONI API request failed",
                 method=method,
                 path=path,
                 status_code=response.status_code,
-                body=body,
+                body=body if self._echo_body_effective() else None,
             )
-        return self._decode(response)
+        return self._scrub_api_key(self._decode(response))
+
+    # -- security helpers ---------------------------------------------------
+    def _read_only_effective(self) -> bool:
+        if self._read_only is not None:
+            return self._read_only
+        return os.getenv("BMONI_READ_ONLY", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+
+    def _echo_body_effective(self) -> bool:
+        mode = self._echo_mode()
+        # '1' echoes the (always-redacted) body; '0' and 'masked' suppress it.
+        return mode == "1"
+
+    def _echo_mode(self) -> str:
+        if self._error_body_echo is not None:
+            mode = self._error_body_echo
+        else:
+            mode = os.getenv("BMONI_ERROR_BODY_ECHO", "masked").strip().lower() or "masked"
+        return mode if mode in ("0", "1", "masked") else "masked"
+
+    @staticmethod
+    def _allowed_readonly(method: str, path: str) -> bool:
+        if method == "GET":
+            return True
+        return method == "POST" and any(
+            allowed in path for allowed in _READONLY_ALLOWED_POST
+        )
+
+    def _scrub_body(self, body: Any) -> Any:
+        """Redact sensitive values and scrub the API key from any text."""
+        return self._scrub_api_key(redact(body))
+
+    def _scrub_api_key(self, value: Any) -> Any:
+        """Recursively remove the literal API key from string leaves."""
+        if not self._api_key:
+            return value
+        if isinstance(value, str):
+            return value.replace(self._api_key, "[REDACTED]")
+        if isinstance(value, dict):
+            return {k: self._scrub_api_key(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [self._scrub_api_key(v) for v in value]
+        return value
 
     @staticmethod
     def _decode(response: httpx.Response) -> Any:

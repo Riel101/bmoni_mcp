@@ -46,8 +46,16 @@ class EuCounterpartDetails(BaseModel):
     country: Optional[str] = Field(None, description="Counterparty country code")
 
 
+class EuCounterpartIdentifier(BaseModel):
+    """SEPA beneficiary account identifier (IBAN)."""
+
+    iban: str = Field(..., description="Beneficiary IBAN (ISO 13616)")
+
+
 class EuCounterpart(BaseModel):
-    identifier: dict = Field(..., description='Object with an "iban" key for the beneficiary IBAN')
+    identifier: EuCounterpartIdentifier = Field(
+        ..., description="Beneficiary IBAN identifier"
+    )
     details: EuCounterpartDetails = Field(..., description="Beneficiary personal details")
 
 
