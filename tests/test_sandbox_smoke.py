@@ -109,6 +109,7 @@ async def journey() -> None:
         if isinstance(created, dict) and created.get("id"):
             user_id = created["id"]
             check("create sandbox user", True)
+            print(f"  user_id  = {user_id}")
         else:
             check("create sandbox user", False, f"unexpected: {created!r}"[:200])
     except Exception as exc:  # noqa: BLE001

@@ -113,6 +113,16 @@ export BMONI_SCOPED_USER_ID=<your-bmoni-user-id>
 python server.py
 ```
 
+Every session is scoped to an existing BMONI user. To get a sandbox user id
+for a live test, create a test user under your developer key:
+
+```bash
+python -m bmoni_mcp.create_sandbox_user   # prints BMONI_SCOPED_USER_ID=<id>
+```
+
+The helper refuses to run unless `BMONI_ENV=sandbox` with the sandbox pair and
+never touches production credentials.
+
 Example Claude Desktop / Cursor / similar config:
 
 ```json
@@ -182,6 +192,7 @@ bmoni_mcp/
     users.py  kyc.py  wallets.py  rails.py  fund.py
     money.py  cards.py  bank_accounts.py
     info.py  employer.py  webhooks.py  approvals_tools.py
+  create_sandbox_user.py  # prints a scoped user id for live tests
 tests/test_server.py       # contract + security tests (no live API)
 tests/test_sandbox_smoke.py# LIVE suite against the developer API (sandbox only)
 ```
@@ -202,7 +213,9 @@ TTL/cooldown, role gating + user-id pinning, rate limiting and upload guards.
 
 Runs a representative **read-only** journey against the developer API. It only
 runs when `BMONI_ENV=sandbox` + sandbox credentials are set, is skipped
-otherwise, and hard-refuses if it detects production credentials:
+otherwise, and hard-refuses if it detects production credentials. It creates a
+throwaway test user and prints its `user_id` (useful for your own scoped
+session):
 
 ```bash
 BMONI_ENV=sandbox python tests/test_sandbox_smoke.py
